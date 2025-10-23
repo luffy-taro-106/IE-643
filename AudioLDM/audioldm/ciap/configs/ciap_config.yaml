@@ -1,0 +1,40 @@
+model:
+  type: "ContrastiveModel"
+  image_encoder:
+    type: "ImageEncoder"
+    input_size: [3, 224, 224]
+    output_size: 512
+    pretrained: true
+  audio_encoder:
+    type: "AudioEncoder"
+    input_size: [1, 16000]
+    output_size: 512
+    pretrained: true
+
+training:
+  batch_size: 32
+  learning_rate: 0.001
+  num_epochs: 50
+  weight_decay: 1e-5
+  scheduler:
+    type: "StepLR"
+    step_size: 10
+    gamma: 0.1
+
+dataset:
+  train:
+    path: "data/train"
+    image_extension: ".png"
+    audio_extension: ".wav"
+  val:
+    path: "data/val"
+    image_extension: ".png"
+    audio_extension: ".wav"
+
+logging:
+  log_dir: "logs"
+  log_interval: 10
+
+device:
+  type: "cuda"  # or "cpu"
+
