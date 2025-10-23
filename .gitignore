@@ -1,0 +1,30 @@
+# ignore dataset folders
+/data/train/
+/data/val/
+/AudioLDM/data/train/
+/AudioLDM/data/val/
+.venv/
+venv/
+
+# ignore common image/audio files
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.gif
+*.webp
+*.tiff
+*.wav
+*.flac
+*.mp3
+
+
+# allow .gitkeep placeholders so empty folders are tracked
+!.gitkeep
+
+# Ignore system files
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+EOF
