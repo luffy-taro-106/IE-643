@@ -21,11 +21,11 @@ def train_contrastive_model(config_path, cli_args=None):
     dataset_cfg = config.get("dataset", {})
     if isinstance(dataset_cfg.get("train"), dict) and "path" in dataset_cfg.get("train"):
         dataset_path = dataset_cfg["train"]["path"]
-        image_ext = dataset_cfg["train"].get("image_extension", ".png")
+        image_ext = dataset_cfg["train"].get("image_extension", ".jpg")
         audio_ext = dataset_cfg["train"].get("audio_extension", ".wav")
     elif "path" in dataset_cfg:
         dataset_path = dataset_cfg["path"]
-        image_ext = dataset_cfg.get("image_extension", ".png")
+        image_ext = dataset_cfg.get("image_extension", ".jpg")
         audio_ext = dataset_cfg.get("audio_extension", ".wav")
     else:
         raise KeyError("Could not find dataset path in config. Expected dataset.train.path or dataset.path")
@@ -79,7 +79,7 @@ def train_contrastive_model(config_path, cli_args=None):
             # labels: i-th image matches i-th audio
             labels = torch.arange(img_emb.size(0), device=device)
 
-            loss = criterion(img_emb, aud_emb, labels)
+            loss = criterion(img_emb, aud_emb)
             loss.backward()
             optimizer.step()
 

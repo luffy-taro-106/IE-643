@@ -24,11 +24,11 @@ training:
 dataset:
   train:
     path: "data/train"
-    image_extension: ".png"
+    image_extension: ".jpg"
     audio_extension: ".wav"
   val:
     path: "data/val"
-    image_extension: ".png"
+    image_extension: ".jpg"
     audio_extension: ".wav"
 
 logging:
