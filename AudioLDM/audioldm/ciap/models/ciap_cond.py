@@ -1,16 +1,16 @@
 import torch
 import torch.nn as nn
-import numpy as np
 
 class CIAPCondStage(nn.Module):
     """
-    Minimal wrapper providing CLAP-like API:
-      - encode(input) -> embedding tensor [B, D]
+    CLAP-like wrapper for CIAP encoders.
+
+    Methods:
+      - encode(x) -> [B, D] (image) normalized
+      - audio_to_embedding(audio) -> [B, D] normalized
       - get_unconditional_condition(batch_size) -> zeros [B, D]
-      - cos_similarity(waves, images_or_texts) -> numpy array similarities
+      - cos_similarity(a, b) -> numpy [N, M] cosine similarities
       - to(device), eval(), train()
-    Assumes you pass pre-instantiated image_encoder and audio_encoder,
-    each exposing encode(tensor) -> tensor [B, D].
     """
     def __init__(self, image_encoder, audio_encoder, embed_dim=512, device="cpu"):
         super().__init__()
@@ -18,87 +18,64 @@ class CIAPCondStage(nn.Module):
         self.audio_encoder = audio_encoder
         self.embed_dim = embed_dim
         self.device = torch.device(device)
-        self.to(self.device)
-        self.eval()
+
+        # move models and set eval
+        self.image_encoder.to(self.device)
+        self.audio_encoder.to(self.device)
+        self.image_encoder.eval()
+        self.audio_encoder.eval()
 
     def to(self, device):
         self.device = torch.device(device)
         self.image_encoder.to(self.device)
         self.audio_encoder.to(self.device)
-        return super().to(self.device)
+        return self
 
     def eval(self):
         self.image_encoder.eval()
         self.audio_encoder.eval()
-        return super().eval()
+        return self
 
     def train(self, mode=True):
         self.image_encoder.train(mode)
         self.audio_encoder.train(mode)
-        return super().train(mode)
+        return self
+
+    def _call_encoder(self, encoder, x):
+        # safe encode wrapper: accepts raw tensors of shape [B, C, H, W] for images
+        # or [B, T] / [B, 1, T] for audio. Returns L2-normalized [B, D] float tensor on device.
+        with torch.no_grad():
+            x = x.to(self.device)
+            # some audio encoders expect flattened waveform; keep as-is and rely on audio_encoder.encode
+            if hasattr(encoder, "encode"):
+                out = encoder.encode(x)
+            else:
+                out = encoder(x)
+            out = out.to(self.device).float()
+            # If output has extra dims (e.g., [B,1,D]), squeeze
+            out = out.view(out.size(0), -1) if out.dim() > 2 else out
+            # L2-normalize
+            out = out / (out.norm(dim=-1, keepdim=True) + 1e-8)
+            return out
 
     def encode(self, x):
-        """
-        Accepts:
-          - tensor image: [B, 3, H, W]
-          - list of images: list of tensors
-        Returns: torch.Tensor [B, D] on same device
-        """
-        if isinstance(x, list):
-            x = torch.stack([xi.to(self.device) for xi in x], dim=0)
-        else:
-            x = x.to(self.device)
-        with torch.no_grad():
-            emb = self.image_encoder.encode(x)
-        return emb.to(self.device)
+        """Encode images -> [B, D] normalized"""
+        return self._call_encoder(self.image_encoder, x)
 
     def get_unconditional_condition(self, batch_size):
-        # simple zero unconditional embedding (same shape as encode output)
-        return torch.zeros(batch_size, self.embed_dim, device=self.device)
+        return torch.zeros(batch_size, self.embed_dim, device=self.device, dtype=torch.float32)
 
     def audio_to_embedding(self, audio_tensor):
-        # accepts numpy or torch; returns torch [B, D]
-        if isinstance(audio_tensor, np.ndarray):
-            audio_tensor = torch.from_numpy(audio_tensor).float()
-        audio_tensor = audio_tensor.to(self.device)
-        with torch.no_grad():
-            emb = self.audio_encoder.encode(audio_tensor)
-        return emb
+        """Encode raw audio waveform -> [B, D] normalized"""
+        return self._call_encoder(self.audio_encoder, audio_tensor)
 
     def cos_similarity(self, waves, images_or_texts):
-        """
-        Compute cosine similarity between waves and images (or image embeddings).
-        - waves: numpy array [Nw, T] or torch tensor [Nw, 1, T]
-        - images_or_texts: list or tensor of images or precomputed embeddings
-        Returns: numpy array shape (Nw, Ni)
-        """
-        # audio -> emb
-        if isinstance(waves, np.ndarray):
-            aud = torch.from_numpy(waves).float()
-        else:
-            aud = waves
-        aud = aud.to(self.device)
-        with torch.no_grad():
-            a_emb = self.audio_encoder.encode(aud)
-        # images_or_texts -> emb
-        if isinstance(images_or_texts, np.ndarray) or isinstance(images_or_texts, torch.Tensor):
-            img_input = images_or_texts
-            if isinstance(img_input, np.ndarray):
-                img_input = torch.from_numpy(img_input).float()
-            img_input = img_input.to(self.device)
-            with torch.no_grad():
-                i_emb = self.image_encoder.encode(img_input)
-        elif isinstance(images_or_texts, list):
-            # assume list of image tensors
-            img_input = torch.stack([it.to(self.device) for it in images_or_texts])
-            with torch.no_grad():
-                i_emb = self.image_encoder.encode(img_input)
-        else:
-            # can't handle other types, return zeros
-            return np.zeros((a_emb.shape[0], 0))
-
-        # normalize and compute cosine
-        a_norm = a_emb / (a_emb.norm(dim=1, keepdim=True) + 1e-8)
-        i_norm = i_emb / (i_emb.norm(dim=1, keepdim=True) + 1e-8)
-        sim = torch.matmul(a_norm, i_norm.t()).cpu().numpy()
+        """Return numpy cosine similarity matrix [N, M]"""
+        if waves.dim() > 2 or waves.shape[-1] > self.embed_dim:
+            waves = self.audio_to_embedding(waves)
+        if images_or_texts.dim() > 2 or images_or_texts.shape[-1] > self.embed_dim:
+            images_or_texts = self.encode(images_or_texts)
+        waves = waves / (waves.norm(dim=-1, keepdim=True) + 1e-8)
+        images_or_texts = images_or_texts / (images_or_texts.norm(dim=-1, keepdim=True) + 1e-8)
+        sim = torch.matmul(waves, images_or_texts.t()).cpu().numpy()
         return sim

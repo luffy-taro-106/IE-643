@@ -10,7 +10,7 @@ class PairedImageAudioDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         root,                     # Path or str to dataset folder
-        image_ext: str = ".png",
+        image_ext: str = ".jpg",
         audio_ext: str = ".wav",
         image_size=(224, 224),
         audio_length: int = 16000,
@@ -58,5 +58,5 @@ class PairedImageAudioDataset(torch.utils.data.Dataset):
             wav = wav[: self.audio_length]
         audio_tensor = torch.from_numpy(wav).unsqueeze(0)  # [1, T]
 
-        return img, audio_tensor
-# ...existing code...
+        # Return image, audio, and image path
+        return img, audio_tensor, str(img_path)

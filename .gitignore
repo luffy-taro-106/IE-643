@@ -3,20 +3,13 @@
 /data/val/
 /AudioLDM/data/train/
 /AudioLDM/data/val/
+AudioLDM/ckpt
 .venv/
 venv/
 
 # ignore common image/audio files
-*.png
-*.jpg
-*.jpeg
-*.bmp
-*.gif
-*.webp
-*.tiff
 *.wav
-*.flac
-*.mp3
+*.jpg
 
 
 # allow .gitkeep placeholders so empty folders are tracked

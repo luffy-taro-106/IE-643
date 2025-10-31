@@ -1,39 +1,57 @@
-# ...existing code...
 import torch
 import torch.nn as nn
 import torchvision.models as models
 from typing import Union, Dict
 
-class ImageEncoder(torch.nn.Module):
+class ImageEncoder(nn.Module):
+    """
+    ResNet18 backbone + projection head to produce CLAP-style 512-d embeddings.
+    Accept config as int (output_dim) or dict with keys: output_dim, pretrained (bool)
+    """
     def __init__(self, config: Union[int, Dict]=512, pretrained: bool=True):
-        """
-        Accept either:
-         - output_dim (int)
-         - config dict with keys: output_size or output_dim, pretrained (optional)
-        """
         super(ImageEncoder, self).__init__()
+        # parse config
         if isinstance(config, dict):
-            output_dim = int(config.get("output_size", config.get("output_dim", 512)))
+            output_dim = int(config.get("output_dim", config.get("output_size", 512)))
             pretrained = bool(config.get("pretrained", pretrained))
         else:
             output_dim = int(config)
 
-        resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None) if hasattr(models, "ResNet18_Weights") else models.resnet18(pretrained=pretrained)
+        # backbone
+        if hasattr(models, "ResNet18_Weights"):
+            resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+        else:
+            resnet = models.resnet18(pretrained=pretrained)
+
         in_features = resnet.fc.in_features
         # remove final fc, keep feature extractor
         self.backbone = nn.Sequential(*list(resnet.children())[:-1])  # outputs [B, in_features, 1, 1]
-        self.fc = nn.Linear(in_features, output_dim)
+        self.output_dim = output_dim
+        # projection head to desired embedding dim
+        self.proj = nn.Linear(in_features, output_dim)
+        # optional layernorm
+        self.ln = nn.LayerNorm(output_dim)
 
     def forward(self, x):
-        feat = self.backbone(x)
-        feat = feat.view(feat.size(0), -1)
-        out = self.fc(feat)
+        # x: [B, C, H, W]
+        feats = self.extract_features(x)          # [B, in_features]
+        out = self.proj(feats)                    # [B, output_dim]
+        out = self.ln(out)
         return out
 
-    def encode(self, images):
-        return self.forward(images)
-
     def extract_features(self, images):
-        feat = self.backbone(images)
-        return feat.view(feat.size(0), -1)
-# ...existing code...
+        # returns flattened backbone features [B, in_features]
+        x = images
+        # pass through backbone
+        z = self.backbone(x)                      # [B, in_features, 1, 1]
+        z = z.view(z.size(0), -1)
+        return z
+
+    def encode(self, images):
+        """
+        CLAP-style API: returns [B, D] embeddings (not normalized here).
+        Normalization / L2 can be applied by wrapper.
+        """
+        with torch.no_grad():
+            out = self.forward(images)
+        return out
