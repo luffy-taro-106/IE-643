@@ -67,9 +67,9 @@ class CIAP_CLAP_Model(nn.Module):
         Returns [B, D] float tensor on device
         """
         images = images.to(self.device)
-        with torch.no_grad():
-            emb = self.image_encoder(images)   # [B, D]
-            emb = emb.to(self.device).float()
+        # allow gradients so the image encoder is trainable
+        emb = self.image_encoder(images)   # [B, D], will have grad when encoder params require_grad=True
+        emb = emb.to(self.device).float()
         return emb
 
     def to(self, device):
